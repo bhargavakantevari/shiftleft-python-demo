@@ -1,0 +1,67 @@
+name: Security Scanner
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Mondays at 9 AM UTC
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup droid CLI
+        run: |
+          curl -fsSL https://app.factory.ai/cli | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      
+      - name: Security audit
+        env:
+          FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
+        run: |
+          droid exec --auto medium "
+          Perform a comprehensive security audit:
+          1. Check package.json for known vulnerabilities
+          2. Update vulnerable dependencies to safe versions
+          3. Scan code for hardcoded secrets or API keys
+          4. Review authentication and authorization patterns
+          5. Check for SQL injection or XSS vulnerabilities
+          6. Generate security-report.md with all findings and fixes
+          "
+      
+      - name: Create issue if vulnerabilities found
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Note: gh CLI is pre-installed on GitHub-hosted runners
+          if [ -f security-report.md ] && grep -q "vulnerability\|security\|risk" security-report.md; then
+            gh issue create \
+              --title "🔒 Security audit findings - $(date +%Y-%m-%d)" \
+              --body-file security-report.md \
+              --label "security,high-priority" \
+              --assignee "${{ github.repository_owner }}"
+          fi
+      
+      - name: Create PR for fixes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Note: gh CLI is pre-installed on GitHub-hosted runners
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            
+            git checkout -b security-fixes-$(date +%Y%m%d)
+            git add -A
+            git commit -m "fix: security updates and dependency patches
+            
+            Co-authored-by: factory-droid[bot] <138933559+factory-droid[bot]@users.noreply.github.com>"
+            git push origin HEAD
+            
+            gh pr create \
+              --title "🔒 Security fixes" \
+              --body-file security-report.md \
+              --label "security,dependencies" \
+              --assignee "${{ github.repository_owner }}"
+          fi
