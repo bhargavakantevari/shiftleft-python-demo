@@ -1,4 +1,4 @@
-import pickle
+import json
 import base64
 from pathlib import Path
 import subprocess
@@ -29,10 +29,12 @@ def log_entry():
     if not user_dir_path.exists():
         user_dir_path.mkdir()
 
-    filename = filename_param + ".txt"
-    path = Path(user_dir + "/" + filename)
+    safe_name = Path(filename_param).name
+    filename = safe_name + ".txt"
+    path = (user_dir_path / filename).resolve()
+    if not str(path).startswith(str(user_dir_path.resolve())):
+        return jsonify({"error": "invalid filename"}), 400
     with path.open("w", encoding="utf-8") as open_file:
-        # vulnerability: Directory Traversal
         open_file.write(text_param)
     return jsonify({"success": True})
 
@@ -40,23 +42,23 @@ def log_entry():
 @bp.route("/grep_processes")
 def grep_processes():
     name = request.args.get("name")
-    # vulnerability: Remote Code Execution
+    if name is None:
+        return jsonify({"error": "name parameter is required"})
     res = subprocess.run(
-        ["ps aux | grep " + name + " | awk '{print $11}'"],
-        shell=True,
-        capture_output=True,
+        ["ps", "aux"], capture_output=True,
     )
     if res.stdout is None:
         return jsonify({"error": "no stdout returned"})
     out = res.stdout.decode("utf-8")
-    names = out.split("\n")
+    names = [line.split()[10] for line in out.splitlines() if name in line and len(line.split()) > 10]
     return jsonify({"success": True, "names": names})
 
 
 @bp.route("/deserialized_descr", methods=["POST"])
 def deserialized_descr():
     pickled = request.form.get('pickled')
+    if pickled is None:
+        return jsonify({"error": "pickled parameter is required"}), 400
     data = base64.urlsafe_b64decode(pickled)
-    # vulnerability: Insecure Deserialization
-    deserialized = pickle.loads(data)
+    deserialized = json.loads(data)
     return jsonify({"success": True, "description": str(deserialized)})

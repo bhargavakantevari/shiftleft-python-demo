@@ -9,8 +9,6 @@ DB_FILENAME = "database.db"
 
 def query_db(query, args=(), one=False, commit=False):
     with sqlite3.connect(DB_FILENAME) as conn:
-        # vulnerability: Sensitive Data Exposure
-        conn.set_trace_callback(print)
         cur = conn.cursor().execute(query, args)
         if commit:
             conn.commit()
@@ -19,7 +17,7 @@ def query_db(query, args=(), one=False, commit=False):
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = "aeZ1iwoh2ree2mo0Eereireong4baitixaixu5Ee"
+    app.secret_key = os.environ.get("SECRET_KEY", os.urandom(32))
 
     db_path = Path(DB_FILENAME)
     if db_path.exists():
