@@ -1,16 +1,35 @@
 import os
+import hashlib
+import hmac
 import sqlite3
 from pathlib import Path
 
-from flask import Flask, g
+from flask import Flask
 
 DB_FILENAME = "database.db"
 
 
+def hash_password(password: str) -> str:
+    """Hash a password using PBKDF2-HMAC-SHA256 with a random salt."""
+    salt = os.urandom(32)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    return salt.hex() + ":" + key.hex()
+
+
+def verify_password(password: str, stored: str) -> bool:
+    """Verify a password against a stored hash."""
+    try:
+        salt_hex, key_hex = stored.split(":")
+        salt = bytes.fromhex(salt_hex)
+        stored_key = bytes.fromhex(key_hex)
+        new_key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+        return hmac.compare_digest(stored_key, new_key)
+    except (ValueError, AttributeError):
+        return False
+
+
 def query_db(query, args=(), one=False, commit=False):
     with sqlite3.connect(DB_FILENAME) as conn:
-        # vulnerability: Sensitive Data Exposure
-        conn.set_trace_callback(print)
         cur = conn.cursor().execute(query, args)
         if commit:
             conn.commit()
@@ -19,7 +38,11 @@ def query_db(query, args=(), one=False, commit=False):
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = "aeZ1iwoh2ree2mo0Eereireong4baitixaixu5Ee"
+    app.secret_key = os.environ.get("FLASK_SECRET_KEY")
+    if not app.secret_key:
+        raise RuntimeError(
+            "FLASK_SECRET_KEY environment variable must be set to a secure random value"
+        )
 
     db_path = Path(DB_FILENAME)
     if db_path.exists():
@@ -31,8 +54,8 @@ def create_app():
     conn.execute(create_table_query)
 
     insert_admin_query = """INSERT INTO user (id, username, password, access_level)
-    VALUES (1, 'admin', 'maximumentropy', 0)"""
-    conn.execute(insert_admin_query)
+    VALUES (1, 'admin', ?, 0)"""
+    conn.execute(insert_admin_query, (hash_password("changeme-on-first-login"),))
     conn.commit()
     conn.close()
 
