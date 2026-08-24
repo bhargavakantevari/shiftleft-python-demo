@@ -2,7 +2,7 @@ import sqlite3
 
 from flask import Blueprint, jsonify, session, request
 
-from . import query_db
+from . import query_db, hash_password
 
 bp = Blueprint("users", __name__)
 
@@ -28,20 +28,23 @@ def create_user():
             ),
             400,
         )
-    if len(password) < 3:
+    if len(password) < 8:
         return (
-            jsonify({"error": "the password needs to be at least 3 characters long"}),
+            jsonify({"error": "the password needs to be at least 8 characters long"}),
             402,
         )
 
-    # vulnerability: SQL Injection
-    query = (
-        "INSERT INTO user (username, password, access_level) VALUES ('%s', '%s', %d)"
-        % (username, password, int(access_level))
-    )
+    try:
+        access_level_int = int(access_level)
+        if access_level_int < 0 or access_level_int > 10:
+            return jsonify({"error": "access_level must be between 0 and 10"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "access_level must be a valid integer"}), 400
+
+    query = "INSERT INTO user (username, password, access_level) VALUES (?, ?, ?)"
 
     try:
-        query_db(query, [], False, True)
+        query_db(query, (username, hash_password(password), access_level_int), False, True)
         return jsonify({"success": True})
     except sqlite3.Error as err:
-        return jsonify({"error": "could not create user:" + err})
+        return jsonify({"error": "could not create user: " + str(err)})
