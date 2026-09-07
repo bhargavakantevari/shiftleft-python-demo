@@ -14,11 +14,13 @@ def search():
         return render_template("error.html", message=message)
 
     try:
+        # Uses parameterized query (already safe from SQL injection)
         query = "SELECT username, access_level FROM user WHERE username LIKE ?;"
         results = query_db(query, (query_param,))
         return render_template(
             "search.html", results=results, num_results=len(results), query=query_param
         )
     except sqlite3.Error as err:
-        message = "Error while executing query " + query_param + ": " + err
+        # Fix: Do not echo raw user input in error messages
+        message = "Error while executing search query: " + str(err)
         return render_template("error.html", message=message)
